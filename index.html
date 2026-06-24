@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>2D Платформер · 3 уровня с шипами</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            background: #1a1e2c;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100dvh;
+            font-family: system-ui, -apple-system, sans-serif;
+            touch-action: pan-y; 
+        }
+        .game-wrapper {
+            background: #0b0d17;
+            border-radius: 36px;
+            padding: 12px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7);
+            max-width: 420px;
+            width: 100%;
+            margin: 12px;
+            position: relative;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: auto;
+            aspect-ratio: 360 / 640;
+            background: #86b3d1;
+            border-radius: 24px;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+            touch-action: none;
+            cursor: pointer;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 16px;
+            padding: 0 6px;
+            gap: 12px;
+        }
+        .ctrl-btn {
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 60px;
+            color: white;
+            font-weight: 600;
+            font-size: 1.4rem;
+            padding: 14px 0;
+            text-align: center;
+            flex: 1;
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+            transition: all 0.08s ease;
+            touch-action: manipulation;
+            letter-spacing: 1px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            min-height: 64px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .ctrl-btn:active {
+            background: rgba(255, 255, 255, 0.45);
+            transform: scale(0.94);
+        }
+        .ctrl-btn.left {
+            border-radius: 60px 20px 20px 60px;
+            background: rgba(255, 215, 100, 0.25);
+            border-color: rgba(255, 215, 100, 0.4);
+        }
+        .ctrl-btn.right {
+            border-radius: 20px 60px 60px 20px;
+            background: rgba(100, 200, 255, 0.25);
+            border-color: rgba(100, 200, 255, 0.4);
+        }
+        .ctrl-btn.jump {
+            background: rgba(255, 120, 120, 0.3);
+            border-color: rgba(255, 120, 120, 0.5);
+            border-radius: 60px;
+            flex: 0.8;
+            font-size: 1.6rem;
+        }
+        .ctrl-btn.reset {
+            background: rgba(200, 200, 200, 0.15);
+            border-color: rgba(255, 255, 255, 0.2);
+            flex: 0.5;
+            font-size: 1.2rem;
+            border-radius: 40px;
+            backdrop-filter: blur(2px);
+        }
+        .ctrl-btn span {
+            opacity: 0.9;
+            pointer-events: none;
+        }
+        .key-hint {
+            text-align: center;
+            color: rgba(255,255,255,0.25);
+            font-size: 0.7rem;
+            margin-top: 8px;
+            letter-spacing: 0.5px;
+        }
+        .key-hint kbd {
+            background: rgba(255,255,255,0.08);
+            padding: 2px 8px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            font-family: inherit;
+            color: rgba(255,255,255,0.5);
+            margin: 0 2px;
+        }
+        @media (max-width: 480px) {
+            .ctrl-btn {
+                font-size: 1.2rem;
+                min-height: 56px;
+                padding: 10px 0;
+            }
+            .ctrl-btn.jump {
+                font-size: 1.4rem;
+            }
+            .key-hint {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="game-wrapper">
+    <canvas id="gameCanvas" width="360" height="640"></canvas>
+    
+    <div class="controls">
+        <button class="ctrl-btn left" id="btnLeft"><span>◀</span></button>
+        <button class="ctrl-btn reset" id="btnReset"><span>⟳</span></button>
+        <button class="ctrl-btn right" id="btnRight"><span>▶</span></button>
+        <button class="ctrl-btn jump" id="btnJump"><span>⬆ ПРЫГ</span></button>
+    </div>
+    <div class="key-hint">
+        <kbd>←</kbd> <kbd>→</kbd> — движение · <kbd>↑</kbd> / <kbd>Пробел</kbd> — прыжок · <kbd>R</kbd> — рестарт · <kbd>ESC</kbd> — меню
+    </div>
+</div>
+
+<script>
+    (function(){
+        // -----  ИНИЦИАЛИЗАЦИЯ -----
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const W = 360, H = 640;
+        canvas.width = W;
+        canvas.height = H;
+
+        // -----  ИГРОВЫЕ ПАРАМЕТРЫ -----
+        const GRAVITY = 0.5;
+        const JUMP_FORCE = -10;
+        const MOVE_SPEED = 4.5;
+        const FRICTION = 0.85;
+
+        // -----  СОСТОЯНИЕ ИГРЫ -----
+        const GAME_STATE = {
+            MENU: 'menu',
+            PLAYING: 'playing',
+            LEVEL_COMPLETE: 'level_complete',
+            GAME_COMPLETE: 'game_complete'
+        };
+
+        let gameState = GAME_STATE.MENU;
+        let currentLevel = 1;
+        let coinCount = 0;
+        let totalCoins = 0;
+        let levelTransition = false;
+        let transitionTimer = 0;
+
+        // -----  ОБЪЕКТ ИГРОКА -----
+        const player = {
+            x: 60, y: 460,
+            w: 26, h: 32,
+            vx: 0, vy: 0,
+            onGround: false,
+            facing: 1
+        };
+
+        // -----  ПЛАТФОРМЫ ДЛЯ УРОВНЕЙ -----
+        function getLevelData(level) {
+            if (level === 1) {
+                return {
+                    platforms: [
+                        { x: 0, y: 580, w: 360, h: 30, coin: null, spike: null },
+                        { x: 40, y: 490, w: 70, h: 16, coin: { x: 65, y: 475, collected: false }, spike: null },
+                        { x: 160, y: 420, w: 70, h: 16, coin: { x: 185, y: 405, collected: false }, spike: null },
+                        { x: 280, y: 350, w: 60, h: 16, coin: { x: 300, y: 335, collected: false }, spike: null },
+                        { x: 100, y: 290, w: 70, h: 16, coin: { x: 125, y: 275, collected: false }, spike: null },
+                        { x: 230, y: 220, w: 70, h: 16, coin: { x: 255, y: 205, collected: false }, spike: null },
+                        // Самая верхняя платформа смещена правее (было x: 20, стало x: 50)
+                        { x: 50, y: 160, w: 60, h: 16, coin: { x: 70, y: 145, collected: false }, spike: null },
+                        { x: 300, y: 530, w: 50, h: 16, coin: { x: 315, y: 515, collected: false }, spike: null },
+                    ],
+                    playerStart: { x: 60, y: 460 },
+                    bgColor: '#86b3d1',
+                    levelName: 'Уровень 1'
+                };
+            } else if (level === 2) {
+                return {
+                    platforms: [
+                        { x: 0, y: 580, w: 360, h: 30, coin: null, spike: null },
+                        { x: 20, y: 520, w: 50, h: 14, coin: { x: 38, y: 505, collected: false }, spike: null },
+                        { x: 120, y: 470, w: 45, h: 14, coin: { x: 135, y: 455, collected: false }, spike: null },
+                        { x: 220, y: 510, w: 50, h: 14, coin: { x: 238, y: 495, collected: false }, spike: null },
+                        { x: 300, y: 450, w: 45, h: 14, coin: { x: 315, y: 435, collected: false }, spike: null },
+                        { x: 50, y: 390, w: 50, h: 14, coin: { x: 68, y: 385, collected: false }, spike: null },
+                        { x: 180, y: 370, w: 45, h: 14, coin: { x: 195, y: 355, collected: false }, spike: null },
+                        { x: 280, y: 330, w: 50, h: 14, coin: { x: 298, y: 315, collected: false }, spike: null },
+                        { x: 80, y: 290, w: 45, h: 14, coin: { x: 95, y: 275, collected: false }, spike: null },
+                        { x: 200, y: 250, w: 50, h: 14, coin: { x: 218, y: 235, collected: false }, spike: null },
+                        { x: 300, y: 210, w: 45, h: 14, coin: { x: 315, y: 195, collected: false }, spike: null },
+                        { x: 140, y: 160, w: 50, h: 14, coin: { x: 158, y: 145, collected: false }, spike: null },
+                    ],
+                    playerStart: { x: 30, y: 500 },
+                    bgColor: '#6b4c7a',
+                    levelName: 'Уровень 2'
+                };
+            } else if (level === 3) {
+                return {
+                    platforms: [
+                        { x: 0, y: 580, w: 360, h: 30, coin: null, spike: null },
+                        { x: 20, y: 520, w: 60, h: 14, coin: { x: 32, y: 505, collected: false }, spike: { x: 50, y: 520, size: 3 } },
+                        { x: 130, y: 480, w: 40, h: 14, coin: { x: 138, y: 465, collected: false }, spike: { x: 150, y: 480, size: 3 } },
+                        { x: 220, y: 510, w: 50, h: 14, coin: { x: 228, y: 495, collected: false }, spike: { x: 245, y: 510, size: 3 } },
+                        { x: 300, y: 460, w: 40, h: 14, coin: { x: 308, y: 445, collected: false }, spike: { x: 320, y: 460, size: 3 } },
+                        { x: 50, y: 400, w: 50, h: 14, coin: { x: 58, y: 385, collected: false }, spike: { x: 75, y: 400, size: 3 } },
+                        { x: 170, y: 380, w: 40, h: 14, coin: { x: 178, y: 365, collected: false }, spike: { x: 190, y: 380, size: 3 } },
+                        { x: 260, y: 340, w: 50, h: 14, coin: { x: 268, y: 325, collected: false }, spike: { x: 285, y: 340, size: 3 } },
+                        { x: 80, y: 300, w: 40, h: 14, coin: { x: 88, y: 285, collected: false }, spike: { x: 100, y: 300, size: 3 } },
+                        { x: 190, y: 260, w: 50, h: 14, coin: { x: 198, y: 245, collected: false }, spike: { x: 215, y: 260, size: 3 } },
+                        { x: 290, y: 220, w: 40, h: 14, coin: { x: 298, y: 205, collected: false }, spike: { x: 310, y: 220, size: 3 } },
+                        { x: 120, y: 170, w: 50, h: 14, coin: { x: 128, y: 155, collected: false }, spike: { x: 145, y: 170, size: 3 } },
+                        { x: 20, y: 120, w: 40, h: 14, coin: { x: 28, y: 105, collected: false }, spike: { x: 40, y: 120, size: 3 } },
+                    ],
+                    playerStart: { x: 40, y: 520 },
+                    bgColor: '#8b3a3a',
+                    levelName: 'Уровень 3'
+                };
+            }
+        }
+
+        let platforms = [];
+        let levelData = null;
+
+        function loadLevel(level) {
+            levelData = getLevelData(level);
+            platforms = levelData.platforms.map(p => ({
+                ...p,
+                coin: p.coin ? { ...p.coin, collected: false } : null,
+                spike: p.spike ? { ...p.spike } : null
+            }));
+            player.x = levelData.playerStart.x;
+            player.y = levelData.playerStart.y;
+            player.vx = 0;
+            player.vy = 0;
+            player.onGround = false;
+            coinCount = 0;
+            totalCoins = platforms.filter(p => p.coin).length;
+            currentLevel = level;
+            levelTransition = false;
+            transitionTimer = 0;
+            gameState = GAME_STATE.PLAYING;
+        }
+
+        function goToMenu() {
+            gameState = GAME_STATE.MENU;
+            levelTransition = false;
+            transitionTimer = 0;
+            player.x = 60;
+            player.y = 460;
+            player.vx = 0;
+            player.vy = 0;
+        }
+
+        // -----  СОСТОЯНИЕ КНОПОК / КЛАВИШ -----
+        const keys = {
+            left: false,
+            right: false,
+            jump: false,
+            jumpPressed: false
+        };
+
+        // -----  УПРАВЛЕНИЕ: КНОПКИ -----
+        function setupButton(id, onStart, onEnd) {
+            const el = document.getElementById(id);
+            if (!el) return;
+
+            el.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                onStart();
+            }, { passive: false });
+            el.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                onEnd();
+            }, { passive: false });
+            el.addEventListener('touchcancel', (e) => {
+                e.preventDefault();
+                onEnd();
+            }, { passive: false });
+
+            el.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                onStart();
+            });
+            el.addEventListener('mouseup', (e) => {
+                e.preventDefault();
+                onEnd();
+            });
+            el.addEventListener('mouseleave', (e) => {
+                onEnd();
+            });
+        }
+
+        setupButton('btnLeft', 
+            () => { if (gameState === GAME_STATE.PLAYING) keys.left = true; },
+            () => { keys.left = false; }
+        );
+        setupButton('btnRight',
+            () => { if (gameState === GAME_STATE.PLAYING) keys.right = true; },
+            () => { keys.right = false; }
+        );
+        setupButton('btnJump',
+            () => { 
+                if (gameState === GAME_STATE.PLAYING) {
+                    keys.jump = true; 
+                    keys.jumpPressed = true; 
+                }
+            },
+            () => { 
+                keys.jump = false; 
+            }
+        );
+        
+        document.getElementById('btnReset').addEventListener('click', (e) => {
+            e.preventDefault();
+            if (gameState === GAME_STATE.PLAYING) {
+                loadLevel(currentLevel);
+            } else if (gameState === GAME_STATE.MENU) {
+                goToMenu();
+            } else {
+                goToMenu();
+            }
+        });
+        document.getElementById('btnReset').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (gameState === GAME_STATE.PLAYING) {
+                loadLevel(currentLevel);
+            } else if (gameState === GAME_STATE.MENU) {
+                goToMenu();
+            } else {
+                goToMenu();
+            }
+        }, { passive: false });
+
+        // -----  УПРАВЛЕНИЕ: КЛАВИАТУРА -----
+        document.addEventListener('keydown', (e) => {
+            const key = e.key;
+            if (key === 'ArrowLeft' || key === 'ArrowRight' || key === 'ArrowUp' || 
+                key === ' ' || key === 'Space' || key === 'r' || key === 'R' ||
+                key === 'Enter' || key === 'Escape') {
+                e.preventDefault();
+            }
+
+            if (gameState === GAME_STATE.MENU) {
+                if (key === 'Enter' || key === ' ') {
+                    startGame();
+                }
+                return;
+            }
+
+            if (gameState === GAME_STATE.PLAYING) {
+                if (key === 'ArrowLeft') {
+                    keys.left = true;
+                }
+                if (key === 'ArrowRight') {
+                    keys.right = true;
+                }
+                if (key === 'ArrowUp' || key === ' ' || key === 'Space') {
+                    if (!keys.jump) {
+                        keys.jumpPressed = true;
+                    }
+                    keys.jump = true;
+                }
+                if (key === 'r' || key === 'R') {
+                    loadLevel(currentLevel);
+                }
+            }
+            
+            if (key === 'Escape' && (gameState === GAME_STATE.PLAYING || gameState === GAME_STATE.LEVEL_COMPLETE)) {
+                goToMenu();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            const key = e.key;
+            if (key === 'ArrowLeft' || key === 'ArrowRight' || key === 'ArrowUp' || 
+                key === ' ' || key === 'Space') {
+                e.preventDefault();
+            }
+            
+            if (gameState === GAME_STATE.PLAYING) {
+                if (key === 'ArrowLeft') {
+                    keys.left = false;
+                }
+                if (key === 'ArrowRight') {
+                    keys.right = false;
+                }
+                if (key === 'ArrowUp' || key === ' ' || key === 'Space') {
+                    keys.jump = false;
+                }
+            }
+        });
+
+        document.addEventListener('blur', () => {
+            keys.left = false;
+            keys.right = false;
+            keys.jump = false;
+            keys.jumpPressed = false;
+        });
+
+        // -----  ЗАПУСК ИГРЫ ИЗ МЕНЮ -----
+        function startGame() {
+            loadLevel(1);
+        }
+
+        // -----  ПРОВЕРКА СТОЛКНОВЕНИЯ С ШИПАМИ -----
+        function checkSpikeCollision() {
+            const px = player.x, py = player.y, pw = player.w, ph = player.h;
+            
+            for (let pl of platforms) {
+                if (!pl.spike) continue;
+                
+                const spike = pl.spike;
+                const spikeSize = spike.size || 3;
+                const sx = spike.x, sy = spike.y;
+                
+                if (px < sx + spikeSize && px + pw > sx - spikeSize &&
+                    py < sy + spikeSize && py + ph > sy - spikeSize) {
+                    respawnAtLevelStart();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function respawnAtLevelStart() {
+            player.x = levelData.playerStart.x;
+            player.y = levelData.playerStart.y;
+            player.vx = 0;
+            player.vy = 0;
+            player.onGround = false;
+        }
+
+        // -----  КОЛЛИЗИЯ С ПЛАТФОРМАМИ -----
+        function handleCollisions() {
+            player.onGround = false;
+            
+            for (let pl of platforms) {
+                const px = player.x, py = player.y, pw = player.w, ph = player.h;
+                const plx = pl.x, ply = pl.y, plw = pl.w, plh = pl.h;
+                
+                if (px < plx + plw && px + pw > plx &&
+                    py < ply + plh && py + ph > ply) {
+                    const overlapX = Math.min(px + pw - plx, plx + plw - px);
+                    const overlapY = Math.min(py + ph - ply, ply + plh - py);
+                    
+                    if (overlapX < overlapY) {
+                        if (px < plx) {
+                            player.x = plx - pw;
+                        } else {
+                            player.x = plx + plw;
+                        }
+                        player.vx = 0;
+                    } else {
+                        if (py < ply) {
+                            player.y = ply - ph;
+                            player.vy = 0;
+                            player.onGround = true;
+                        } else {
+                            player.y = ply + plh;
+                            player.vy = 0;
+                        }
+                    }
+                }
+                
+                if (pl.coin && !pl.coin.collected) {
+                    const coin = pl.coin;
+                    const coinSize = 10;
+                    const cx = coin.x, cy = coin.y;
+                    
+                    if (px < cx + coinSize && px + pw > cx - coinSize &&
+                        py < cy + coinSize && py + ph > cy - coinSize) {
+                        coin.collected = true;
+                        coinCount++;
+                        
+                        if (coinCount === totalCoins) {
+                            if (currentLevel === 1) {
+                                levelTransition = true;
+                                transitionTimer = 90;
+                                gameState = GAME_STATE.LEVEL_COMPLETE;
+                            } else if (currentLevel === 2) {
+                                levelTransition = true;
+                                transitionTimer = 90;
+                                gameState = GAME_STATE.LEVEL_COMPLETE;
+                            } else if (currentLevel === 3) {
+                                levelTransition = true;
+                                transitionTimer = 120;
+                                gameState = GAME_STATE.GAME_COMPLETE;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (player.x < 0) { player.x = 0; player.vx = 0; }
+            if (player.x + player.w > W) { player.x = W - player.w; player.vx = 0; }
+            if (player.y + player.h > H) {
+                player.y = H - player.h;
+                player.vy = 0;
+                player.onGround = true;
+            }
+            if (player.y < 0) { player.y = 0; player.vy = 0; }
+        }
+
+        // -----  ОБНОВЛЕНИЕ -----
+        function update() {
+            if (gameState === GAME_STATE.MENU) {
+                return;
+            }
+
+            if (levelTransition) {
+                transitionTimer--;
+                if (transitionTimer <= 0) {
+                    if (gameState === GAME_STATE.LEVEL_COMPLETE) {
+                        if (currentLevel === 1) {
+                            loadLevel(2);
+                        } else if (currentLevel === 2) {
+                            loadLevel(3);
+                        }
+                    } else if (gameState === GAME_STATE.GAME_COMPLETE) {
+                        goToMenu();
+                    }
+                }
+                return;
+            }
+
+            if (gameState !== GAME_STATE.PLAYING) return;
+
+            if (keys.left) {
+                player.vx = -MOVE_SPEED;
+                player.facing = -1;
+            } else if (keys.right) {
+                player.vx = MOVE_SPEED;
+                player.facing = 1;
+            } else {
+                player.vx *= FRICTION;
+                if (Math.abs(player.vx) < 0.1) player.vx = 0;
+            }
+
+            if (keys.jumpPressed && player.onGround) {
+                player.vy = JUMP_FORCE;
+                player.onGround = false;
+                keys.jumpPressed = false;
+            }
+
+            if (!player.onGround && keys.jump) {
+                keys.jumpPressed = false;
+            }
+
+            player.vy += GRAVITY;
+            if (player.vy > 12) player.vy = 12;
+
+            player.x += player.vx;
+            player.y += player.vy;
+
+            handleCollisions();
+            
+            if (checkSpikeCollision()) {
+                return;
+            }
+
+            if (player.y > H + 60) {
+                respawnAtLevelStart();
+            }
+
+            if (!keys.jump) {
+                keys.jumpPressed = false;
+            }
+        }
+
+        // -----  ОТРИСОВКА -----
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+
+            if (gameState === GAME_STATE.MENU) {
+                drawMenu();
+                return;
+            }
+
+            drawLevel();
+
+            if (gameState === GAME_STATE.LEVEL_COMPLETE) {
+                if (currentLevel === 1) {
+                    drawOverlay('🌟 УРОВЕНЬ 1 ПРОЙДЕН!', 'Переход на уровень 2...', '#ffdd77');
+                } else if (currentLevel === 2) {
+                    drawOverlay('🌟 УРОВЕНЬ 2 ПРОЙДЕН!', 'Переход на уровень 3 с шипами...', '#ffdd77');
+                }
+            } else if (gameState === GAME_STATE.GAME_COMPLETE) {
+                drawOverlay('🎉 ИГРА ПРОЙДЕНА!', 'Возврат в главное меню...', '#ff6b6b');
+            }
+        }
+
+        function drawMenu() {
+            const grad = ctx.createLinearGradient(0, 0, 0, H);
+            grad.addColorStop(0, '#1a1a2e');
+            grad.addColorStop(0.5, '#16213e');
+            grad.addColorStop(1, '#0f3460');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.shadowColor = 'rgba(255,215,0,0.3)';
+            ctx.shadowBlur = 30;
+            ctx.fillStyle = '#ffd700';
+            ctx.font = 'bold 42px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('🏰 ПЛАТФОРМЕР', W/2, 160);
+            
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = 'rgba(255,215,0,0.4)';
+            ctx.font = '18px system-ui, sans-serif';
+            ctx.fillText('3 уровня · Собери все монеты!', W/2, 210);
+
+            const btnY = 330;
+            ctx.shadowColor = 'rgba(255,215,0,0.4)';
+            ctx.shadowBlur = 20;
+            
+            const pulse = Math.sin(Date.now() / 500) * 0.1 + 0.9;
+            ctx.fillStyle = `rgba(255, 215, 0, ${0.2 * pulse})`;
+            ctx.beginPath();
+            ctx.roundRect(80, btnY - 25, 200, 60, 30);
+            ctx.fill();
+            
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = 'rgba(255,215,0,0.6)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(80, btnY - 25, 200, 60, 30);
+            ctx.stroke();
+
+            ctx.fillStyle = '#ffd700';
+            ctx.font = 'bold 28px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('▶ ИГРАТЬ', W/2, btnY + 4);
+
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.font = '14px system-ui, sans-serif';
+            ctx.fillText('← → движение · ↑ прыжок · R рестарт', W/2, 470);
+            ctx.fillText('ESC — выход в меню', W/2, 500);
+
+            ctx.fillStyle = 'rgba(255,255,255,0.1)';
+            ctx.font = '12px system-ui, sans-serif';
+            ctx.fillText('v3.0 · 3 уровня с шипами', W/2, 590);
+
+            ctx.fillStyle = 'rgba(255,255,255,0.15)';
+            ctx.font = '14px system-ui, sans-serif';
+            ctx.fillText('👆 Нажмите на кнопку или Enter', W/2, 430);
+        }
+
+        function drawLevel() {
+            const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+            if (currentLevel === 1) {
+                bgGrad.addColorStop(0, '#89c2e8');
+                bgGrad.addColorStop(0.7, '#b4d9f0');
+            } else if (currentLevel === 2) {
+                bgGrad.addColorStop(0, '#6b4c7a');
+                bgGrad.addColorStop(0.5, '#8b6a9a');
+                bgGrad.addColorStop(1, '#5a3a6a');
+            } else {
+                bgGrad.addColorStop(0, '#8b3a3a');
+                bgGrad.addColorStop(0.5, '#6b2a2a');
+                bgGrad.addColorStop(1, '#4a1a1a');
+            }
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, W, H);
+
+            if (currentLevel === 1) {
+                ctx.beginPath();
+                ctx.arc(300, 60, 30, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 230, 130, 0.6)';
+                ctx.shadowColor = '#ffdd77';
+                ctx.shadowBlur = 40;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            } else if (currentLevel === 2) {
+                ctx.beginPath();
+                ctx.arc(300, 60, 25, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(220, 220, 255, 0.5)';
+                ctx.shadowColor = '#aaccff';
+                ctx.shadowBlur = 30;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = 'rgba(180, 180, 200, 0.3)';
+                ctx.beginPath();
+                ctx.arc(290, 55, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(310, 68, 4, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                ctx.beginPath();
+                ctx.arc(300, 60, 25, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 100, 100, 0.4)';
+                ctx.shadowColor = '#ff4444';
+                ctx.shadowBlur = 30;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = 'rgba(200, 50, 50, 0.3)';
+                ctx.beginPath();
+                ctx.arc(290, 55, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(310, 68, 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            for (let pl of platforms) {
+                ctx.shadowColor = 'rgba(0,0,0,0.2)';
+                ctx.shadowBlur = 8;
+                
+                if (currentLevel === 1) {
+                    ctx.fillStyle = '#5d7a5c';
+                } else if (currentLevel === 2) {
+                    ctx.fillStyle = '#7a5a7a';
+                } else {
+                    ctx.fillStyle = '#6a4a4a';
+                }
+                ctx.beginPath();
+                ctx.roundRect(pl.x, pl.y, pl.w, pl.h, 6);
+                ctx.fill();
+
+                ctx.shadowBlur = 0;
+                if (currentLevel === 1) {
+                    ctx.fillStyle = '#7fa07c';
+                } else if (currentLevel === 2) {
+                    ctx.fillStyle = '#9a7a9a';
+                } else {
+                    ctx.fillStyle = '#8a5a5a';
+                }
+                ctx.beginPath();
+                ctx.roundRect(pl.x+2, pl.y-2, pl.w-4, 6, 4);
+                ctx.fill();
+                
+                if (currentLevel === 1) {
+                    ctx.fillStyle = '#3d543c';
+                } else if (currentLevel === 2) {
+                    ctx.fillStyle = '#5a3a5a';
+                } else {
+                    ctx.fillStyle = '#4a2a2a';
+                }
+                ctx.beginPath();
+                ctx.roundRect(pl.x, pl.y+pl.h-4, pl.w, 4, 2);
+                ctx.fill();
+
+                if (pl.spike) {
+                    const sx = pl.spike.x;
+                    const sy = pl.spike.y;
+                    const size = pl.spike.size || 3;
+                    
+                    ctx.shadowColor = '#ff0000';
+                    ctx.shadowBlur = 10;
+                    ctx.fillStyle = '#cc3333';
+                    ctx.beginPath();
+                    ctx.moveTo(sx - size, sy + 3);
+                    ctx.lineTo(sx, sy - size);
+                    ctx.lineTo(sx + size, sy + 3);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    ctx.shadowBlur = 0;
+                    ctx.fillStyle = 'rgba(255, 100, 100, 0.3)';
+                    ctx.beginPath();
+                    ctx.moveTo(sx - 1.5, sy + 2);
+                    ctx.lineTo(sx, sy - 1.5);
+                    ctx.lineTo(sx + 1.5, sy + 2);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    ctx.shadowBlur = 0;
+                }
+
+                if (pl.coin && !pl.coin.collected) {
+                    const cx = pl.coin.x;
+                    const cy = pl.coin.y;
+                    const size = 10;
+                    
+                    ctx.shadowColor = '#ffd700';
+                    ctx.shadowBlur = 16;
+                    
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, size, 0, Math.PI * 2);
+                    const coinGrad = ctx.createRadialGradient(cx-3, cy-3, 2, cx, cy, size);
+                    coinGrad.addColorStop(0, '#ffe066');
+                    coinGrad.addColorStop(0.7, '#f5b342');
+                    coinGrad.addColorStop(1, '#c47d20');
+                    ctx.fillStyle = coinGrad;
+                    ctx.fill();
+                    
+                    ctx.shadowBlur = 0;
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                    ctx.beginPath();
+                    ctx.arc(cx-3, cy-4, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.fillStyle = '#7a5a1a';
+                    ctx.font = 'bold 12px system-ui, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('$', cx, cy+1);
+                    
+                    ctx.shadowBlur = 0;
+                }
+            }
+
+            const px = player.x, py = player.y;
+            ctx.shadowColor = 'rgba(0,0,0,0.3)';
+            ctx.shadowBlur = 12;
+            const grd = ctx.createLinearGradient(px, py, px+player.w, py+player.h);
+            grd.addColorStop(0, '#f9d56e');
+            grd.addColorStop(0.5, '#f5b342');
+            grd.addColorStop(1, '#d48c2c');
+            ctx.fillStyle = grd;
+            ctx.beginPath();
+            ctx.roundRect(px, py, player.w, player.h, 8);
+            ctx.fill();
+
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#1e2a3a';
+            const eyeOffsetX = (player.facing === 1) ? 16 : 6;
+            ctx.beginPath();
+            ctx.arc(px + eyeOffsetX, py + 10, 4, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(px + eyeOffsetX + 6, py + 10, 3.5, 0, Math.PI*2);
+            ctx.fill();
+
+            ctx.fillStyle = '#f0f4ff';
+            ctx.beginPath();
+            ctx.arc(px + eyeOffsetX + 1, py + 8, 1.5, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(px + eyeOffsetX + 7, py + 8, 1.5, 0, Math.PI*2);
+            ctx.fill();
+
+            ctx.strokeStyle = '#3d2817';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(px + player.w/2, py + 18, 7, 0.1, Math.PI - 0.1);
+            ctx.stroke();
+
+            ctx.fillStyle = '#c97d2b';
+            ctx.fillRect(px+4, py+22, 4, 4);
+            ctx.fillRect(px+player.w-8, py+22, 4, 4);
+
+            ctx.shadowBlur = 0;
+
+            ctx.shadowColor = 'rgba(0,0,0,0.5)';
+            ctx.shadowBlur = 12;
+            
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.beginPath();
+            ctx.roundRect(12, 12, 160, 50, 16);
+            ctx.fill();
+            
+            ctx.shadowBlur = 0;
+            
+            ctx.beginPath();
+            ctx.arc(32, 32, 12, 0, Math.PI * 2);
+            const miniCoinGrad = ctx.createRadialGradient(29, 29, 3, 32, 32, 12);
+            miniCoinGrad.addColorStop(0, '#ffe066');
+            miniCoinGrad.addColorStop(0.7, '#f5b342');
+            miniCoinGrad.addColorStop(1, '#c47d20');
+            ctx.fillStyle = miniCoinGrad;
+            ctx.fill();
+            
+            ctx.fillStyle = '#7a5a1a';
+            ctx.font = 'bold 12px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('$', 32, 33);
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 16px system-ui, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`× ${coinCount} / ${totalCoins}`, 48, 28);
+            
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            ctx.font = 'bold 12px system-ui, sans-serif';
+            ctx.fillText(`Уровень ${currentLevel}`, 48, 48);
+            
+            if (currentLevel === 3) {
+                ctx.fillStyle = 'rgba(255, 50, 50, 0.4)';
+                ctx.font = 'bold 10px system-ui, sans-serif';
+                ctx.fillText('⚠️ ОСТОРОЖНО! ШИПЫ!', 12, 70);
+            }
+            
+            ctx.shadowBlur = 0;
+        }
+
+        function drawOverlay(title, subtitle, color) {
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.fillRect(0, 0, W, H);
+            
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 40;
+            ctx.fillStyle = color;
+            ctx.font = 'bold 36px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(title, W/2, H/2 - 30);
+            
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '18px system-ui, sans-serif';
+            ctx.fillText(subtitle, W/2, H/2 + 40);
+            
+            if (transitionTimer > 0) {
+                const progress = 1 - (transitionTimer / 120);
+                ctx.fillStyle = 'rgba(255,255,255,0.2)';
+                ctx.fillRect(W/2 - 100, H/2 + 80, 200, 6);
+                ctx.fillStyle = color;
+                ctx.fillRect(W/2 - 100, H/2 + 80, 200 * progress, 6);
+            }
+        }
+
+        if (!CanvasRenderingContext2D.prototype.roundRect) {
+            CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+                if (r > w/2) r = w/2;
+                if (r > h/2) r = h/2;
+                this.moveTo(x + r, y);
+                this.lineTo(x + w - r, y);
+                this.quadraticCurveTo(x + w, y, x + w, y + r);
+                this.lineTo(x + w, y + h - r);
+                this.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+                this.lineTo(x + r, y + h);
+                this.quadraticCurveTo(x, y + h, x, y + h - r);
+                this.lineTo(x, y + r);
+                this.quadraticCurveTo(x, y, x + r, y);
+                return this;
+            };
+        }
+
+        canvas.addEventListener('click', (e) => {
+            if (gameState === GAME_STATE.MENU) {
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                const x = (e.clientX - rect.left) * scaleX;
+                const y = (e.clientY - rect.top) * scaleY;
+                
+                if (x > 80 && x < 280 && y > 305 && y < 385) {
+                    startGame();
+                }
+            }
+        });
+
+        canvas.addEventListener('touchstart', (e) => {
+            if (gameState === GAME_STATE.MENU) {
+                const touch = e.touches[0];
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                const x = (touch.clientX - rect.left) * scaleX;
+                const y = (touch.clientY - rect.top) * scaleY;
+                
+                if (x > 80 && x < 280 && y > 305 && y < 385) {
+                    e.preventDefault();
+                    startGame();
+                }
+            }
+        }, { passive: false });
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        document.addEventListener('touchmove', (e) => {
+            if (e.target.closest('.game-wrapper')) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+    })();
+</script>
+</body>
+</html>
